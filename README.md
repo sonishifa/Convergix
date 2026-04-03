@@ -23,31 +23,8 @@ A production-grade collaborative text editor built with a hybrid CRDT + OT archi
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    CLIENT LAYER                      │
-│  TipTap + ProseMirror ←→ Yjs (YATA CRDT)            │
-│  Awareness Protocol (cursors)  |  y-indexeddb       │
-└──────────────────────┬──────────────────────────────┘
-                       │ WebSocket (Hocuspocus protocol)
-                  ┌────▼─────┐
-                  │  nginx   │  ip_hash sticky sessions
-                  └────┬─────┘
-          ┌────────────┼────────────┐
-     ┌────▼────┐  ┌────▼────┐  ┌───▼─────┐
-     │ WS Node │  │ WS Node │  │ WS Node │  Stateless relay nodes
-     │    1    │  │    2    │  │    N    │
-     └────┬────┘  └────┬────┘  └───┬─────┘
-          └────────────┼────────────┘
-                  ┌────▼─────┐
-                  │  Redis   │  Pub/Sub — cross-node CRDT broadcast
-                  └────┬─────┘
-          ┌────────────┼────────────┐
-   ┌──────▼──────┐ ┌───▼──────┐ ┌──▼──────────┐
-   │ PostgreSQL  │ │ OT Op Log│ │ Redis Cache │
-   │ (snapshots) │ │(revision)│ │ (hot docs)  │
-   └─────────────┘ └──────────┘ └─────────────┘
-```
+![Convergix Architecture](./convergix.jpg)
+
 
 **Why this architecture is not a single backend:**
 Each WebSocket node is stateless — it holds the active Y.Doc in memory only while clients are connected. Redis Pub/Sub is the shared bus that keeps all nodes in sync. Any node can go down and clients reconnect to another without data loss.
