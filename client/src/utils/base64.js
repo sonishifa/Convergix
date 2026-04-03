@@ -1,0 +1,10 @@
+export function base64ToUint8(b64) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+export function uint8ToBase64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
+}
