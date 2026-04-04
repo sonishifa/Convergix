@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { createYDoc }                  from '../lib/yjs-setup';
 import { createIndexedDbPersistence }  from '../lib/indexeddb-persist';
 import { createWsProvider }            from '../lib/ws-provider';
@@ -39,6 +39,11 @@ export function useCollaboration(docId, user) {
   const ydocRef     = useRef(null);
   const everSynced  = useRef(false);
 
+  // Manual dismiss for the conflict banner
+  const dismissConflict = useCallback(() => {
+    setSession(prev => ({ ...prev, conflict: null }));
+  }, []);
+
   useEffect(() => {
     if (!docId || !user?.token) return;
 
@@ -51,6 +56,7 @@ export function useCollaboration(docId, user) {
 
     let localSnapshot = null;
     let destroyed     = false;
+    let dismissTimer  = null;
 
     idbReady.then(() => {
       if (destroyed) return;
@@ -62,15 +68,15 @@ export function useCollaboration(docId, user) {
         token: user.token,
 
         onSynced() {
-          // Defer ready signal until awareness.doc is confirmed live.
-          // Guards against StrictMode double-invoke and Hocuspocus's
-          // async awareness initialization sequence.
           waitForAwareness(wsProvider, () => {
             if (destroyed) return;
             const merged = doc.getXmlFragment('default').toString();
             if (!everSynced.current && localSnapshot && merged !== localSnapshot) {
               setSession(prev => ({ ...prev, conflict: { local: localSnapshot, merged } }));
-              setTimeout(() => setSession(prev => ({ ...prev, conflict: null })), 4000);
+              // Auto-dismiss after 12 seconds — long enough to read
+              dismissTimer = setTimeout(() => {
+                setSession(prev => ({ ...prev, conflict: null }));
+              }, 12000);
             }
             everSynced.current = true;
             localSnapshot      = null;
@@ -95,6 +101,7 @@ export function useCollaboration(docId, user) {
 
     return () => {
       destroyed = true;
+      if (dismissTimer) clearTimeout(dismissTimer);
       providerRef.current?.destroy();
       idbRef.current?.destroy();
       ydocRef.current?.destroy();
@@ -106,5 +113,5 @@ export function useCollaboration(docId, user) {
     };
   }, [docId, user?.token]);
 
-  return session;
+  return { ...session, dismissConflict };
 }

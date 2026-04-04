@@ -54,9 +54,9 @@ export function useRevisionHistory(docId) {
   const [error,   setError]   = useState(null);
   const cacheRef = useRef(null);
 
-  useEffect(() => {
+  const fetchHistory = useCallback((silent = false) => {
     if (!docId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
 
     const token = sessionStorage.getItem('collab_token');
@@ -68,16 +68,47 @@ export function useRevisionHistory(docId) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then(({ snapshot, ops }) => {
-        cacheRef.current = buildCheckpointCache(snapshot, ops);
-        setOps(ops);
-        const lastFrame = ops.length;
-        setFrame(lastFrame);
-        setText(replayToFrame(cacheRef.current, ops, lastFrame));
+      .then(({ snapshot, ops: newOps }) => {
+        cacheRef.current = buildCheckpointCache(snapshot, newOps);
+        setOps(newOps);
+        
+        // If it's a silent background fetch, don't interrupt what they are currently viewing
+        if (!silent) {
+          const lastFrame = newOps.length;
+          setFrame(lastFrame);
+          setText(replayToFrame(cacheRef.current, newOps, lastFrame));
+        } else {
+          // If silent, just update text if they were pinned to the end previously. Keep their scrub state otherwise.
+          setFrame(f => {
+            if (f === ops.length || f === 0) {
+               // They were looking at the latest point. Move them to the new latest point.
+               const newLastFrame = newOps.length;
+               setText(replayToFrame(cacheRef.current, newOps, newLastFrame));
+               return newLastFrame;
+            }
+            return f;
+          });
+        }
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [docId]);
+      .catch(err => {
+        if (err.message.includes('Failed to fetch')) {
+          setError('Cannot connect to revision history server (is backend running?)');
+        } else {
+          setError(err.message);
+        }
+      })
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
+  }, [docId, ops.length]);
+
+  useEffect(() => {
+    fetchHistory();
+    const interval = setInterval(() => {
+      fetchHistory(true);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchHistory]);
 
   const scrubToFrame = useCallback((f) => {
     if (!cacheRef.current) return;
@@ -85,5 +116,5 @@ export function useRevisionHistory(docId) {
     setText(replayToFrame(cacheRef.current, ops, f));
   }, [ops]);
 
-  return { ops, frame, text, loading, error, scrubToFrame };
+  return { ops, frame, text, loading, error, scrubToFrame, retry: fetchHistory };
 }

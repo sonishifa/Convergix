@@ -1,14 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import CollabEditor                          from './components/Editor/CollabEditor';
-import Timeline                              from './components/Revision/Timeline';
-import { randomColor }                       from './constants/colors';
-
-const API = import.meta.env.VITE_API_URL || '/api';
+import LoginPage                             from './components/Auth/LoginPage';
+import Dashboard                             from './components/Dashboard/Dashboard';
 
 export default function App() {
-  const [user,        setUser]        = useState(null);
-  const [authError,   setAuthError]   = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const [user, setUser] = useState(null);
 
   // Theme: persist preference in localStorage
   const [theme, setTheme] = useState(
@@ -27,49 +23,76 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  // Doc ID from URL: share ?doc=my-project with teammates
-  const [docId] = useState(
-    () => new URLSearchParams(window.location.search).get('doc') || 'default'
+  // Doc ID from URL state
+  const [docId, setDocId] = useState(
+    () => new URLSearchParams(window.location.search).get('doc')
   );
 
+  // Sync URL when docId changes
   useEffect(() => {
-    const name  = `User${Math.floor(Math.random() * 9000 + 1000)}`;
-    const color = randomColor();
+    const url = new URL(window.location);
+    if (docId) {
+      url.searchParams.set('doc', docId);
+    } else {
+      url.searchParams.delete('doc');
+    }
+    window.history.pushState({}, '', url);
+  }, [docId]);
 
-    fetch(`${API}/auth/token`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name, color }),
-    })
-      .then(r => {
-        if (!r.ok) throw new Error(`Auth failed: ${r.status}`);
-        return r.json();
-      })
-      .then(({ token, user }) => {
-        sessionStorage.setItem('collab_token', token); // used by useRevisionHistory
-        setUser({ ...user, token });
-      })
-      .catch(err => setAuthError(err.message));
+  const handleLogout = useCallback(() => {
+    sessionStorage.removeItem('collab_token');
+    setUser(null);
   }, []);
 
-  if (authError) {
-    return <div className="fullscreen-state error">Could not connect: {authError}</div>;
-  }
+  // Show login page if no user
   if (!user) {
-    return <div className="fullscreen-state">Authenticating…</div>;
+    return <LoginPage onLogin={setUser} />;
   }
 
   return (
     <div className="app">
       <header className="app-header">
-        <h1 className="app-title">Convergix</h1>
-        <div className="header-controls">
-          <code className="doc-badge">doc: {docId}</code>
-          <button
-            className="btn-secondary"
-            onClick={() => setShowHistory(v => !v)}
+        <div className="header-left">
+          <div 
+            className="app-logo" 
+            style={{ cursor: 'pointer' }}
+            onClick={() => setDocId(null)}
+            title="Go to Dashboard"
           >
-            {showHistory ? 'Hide History' : 'Revision History'}
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" fill="url(#g1)" opacity="0.9"/>
+              <path d="M2 17l10 5 10-5" stroke="url(#g1)" strokeWidth="2" fill="none" opacity="0.5"/>
+              <path d="M2 12l10 5 10-5" stroke="url(#g1)" strokeWidth="2" fill="none" opacity="0.7"/>
+              <defs>
+                <linearGradient id="g1" x1="2" y1="2" x2="22" y2="22">
+                  <stop stopColor="#6366f1"/>
+                  <stop offset="1" stopColor="#06b6d4"/>
+                </linearGradient>
+              </defs>
+            </svg>
+            <h1 className="app-title">Convergix</h1>
+          </div>
+          {docId && (
+            <div className="doc-badge">
+              <span className="doc-badge__icon">📄</span>
+              <span>{docId.split('-')[0]}</span>
+            </div>
+          )}
+        </div>
+        <div className="header-controls">
+          <div className="user-identity">
+            <span
+              className="user-identity__dot"
+              style={{ background: user.color }}
+            />
+            <span className="user-identity__name">{user.name}</span>
+          </div>
+          <button
+            className="btn-ghost"
+            onClick={handleLogout}
+            title="Sign out"
+          >
+            Sign out
           </button>
           <button
             className="theme-toggle"
@@ -83,8 +106,11 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        <CollabEditor docId={docId} user={user} />
-        {showHistory && <Timeline docId={docId} />}
+        {docId ? (
+          <CollabEditor docId={docId} user={user} />
+        ) : (
+          <Dashboard user={user} onSelectDoc={setDocId} />
+        )}
       </main>
     </div>
   );
